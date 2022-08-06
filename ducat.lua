@@ -20,7 +20,7 @@
 
 s = require 'sequins'
 mu = require 'musicutil'
-polyperc = require 'polyperc'
+hnds = include('lib/hnds')
 
 engine.name = 'PolyPerc'
 
@@ -29,6 +29,27 @@ seq_stacks = {
   {s{0, 2, 4, s{9, 16, s{12, 24}, s{11, 23}}}},
   {s{0, 12}}
 }
+
+function hnds.process()
+  for i = 1, 4 do
+    local target = hnds[i].lfo_targets[params:get(i .. "lfo_target")]
+    local on     = params:get(i .. "lfo") == 2
+    
+    if on then
+      if target == "ch1_cutoff" or target == "ch2_cutoff" then
+        params:set(target, hnds.scale(hnds[i].slope, -1, 1, 0.0, 5000))
+      elseif target == "ch1_amp" or target == "ch2_amp" then
+        params:set(target, hnds.scale(hnds[i].slope, -1, 1, 0.0, 1.0))
+      elseif target == "ch1_release" or target == "ch2_release" then
+        params:set(target, hnds.scale(hnds[i].slope, -1, 1, 0.0, 10.0))
+      elseif target == "ch1_pw" or target == "ch2_pw" then
+        params:set(target, hnds.scale(hnds[i].slope, -1, 1, 0.0, 100.0))
+      elseif target == "ch1_pan" or target == "ch2_pan" then
+        params:set(target, hnds.scale(hnds[i].slope, -1, 1, -1.0, 1.0))
+      end
+    end
+  end
+end
 
 function init()
   local dir = _path.data..'/'..debug.getinfo(1,'S').source:match("([^/]*).lua$")..'/'
@@ -57,10 +78,21 @@ function init()
       idx = 1; chn = 1
     end
   end
-  params:add{type = "number", id = "ch1_step_div", name = "ch1 division", min = 1, max = 16, default = 4}
-  params:add{type = "number", id = "ch2_step_div", name = "ch2 division", min = 1, max = 16, default = 2}
-  params:add_group("synth",6)
-  polyperc.params()
+  for i=1,2 do
+    params:add{type="control", id="ch"..i.."_cutoff",      name="ch"..i.." cutoff",  controlspec=controlspec.new(50,5000,'exp',0,800,'hz')}
+    params:add{type="control", id="ch"..i.."_amp",         name="ch"..i.." amp",     controlspec=controlspec.new(0,1,'lin',0,0.5,'')}
+    params:add{type="control", id="ch"..i.."_release",     name="ch"..i.." release", controlspec=controlspec.new(0.1,10,'lin',0,1.2,'s')}
+    params:add{type="control", id="ch"..i.."_pw",          name="ch"..i.." pw",      controlspec=controlspec.new(0,100,'lin',0,50,'%')}
+    params:add{type="control", id="ch"..i.."_pan",         name="ch"..i.." pan",     controlspec=controlspec.new(-1,1, 'lin',0,0,'')}
+    params:add{type="option",  id="ch"..i.."_step",   options={1/8, 1/7, 1/6, 1/5, 1/4, 1/3, 1/2, 1, 2, 3, 4, 5, 6, 7, 8}, default=5}
+  end
+  hnds[1].lfo_targets = {"none",
+                         "ch1_cutoff", "ch1_amp", "ch1_release", "ch1_pw", "ch1_pan",
+                         "ch2_cutoff", "ch2_amp", "ch2_release", "ch2_pw", "ch2_pan"}
+  hnds[2].lfo_targets = hnds[1].lfo_targets
+  hnds[3].lfo_targets = hnds[1].lfo_targets
+  hnds[4].lfo_targets = hnds[1].lfo_targets
+  hnds.init()
 
   c1, c2 = clk(1), clk(2)
   if norns.crow.connected() then
@@ -71,13 +103,13 @@ function init()
   else
     clock.run(function ()
       while true do
-        clock.sync(1/params:get('ch1_step_div'))
+        clock.sync(params:string('ch1_step'))
         c1()
       end
     end)
     clock.run(function ()
       while true do
-        clock.sync(1/params:get('ch2_step_div'))
+        clock.sync(params:string('ch2_step'))
         c2()
       end
     end)
@@ -95,6 +127,11 @@ function clk(c)
   return function ()
     local s = seq_stacks[c][1]()
     crow.output[c].volts = s / 12
+    engine.amp(params:get("ch"..c.."_amp"))
+    engine.cutoff(params:get("ch"..c.."_cutoff"))
+    engine.release(params:get("ch"..c.."_release"))
+    engine.pw(params:get("ch"..c.."_pw") / 100)
+    engine.pan(params:get("ch"..c.."_pan"))
     engine.hz(mu.note_num_to_freq(60 + s))
   end
 end
