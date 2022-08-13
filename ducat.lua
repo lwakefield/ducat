@@ -21,6 +21,7 @@
 s = require 'sequins'
 mu = require 'musicutil'
 hnds = include('lib/hnds')
+hs = include('awake/lib/halfsecond')
 
 engine.name = 'PolyPerc'
 
@@ -93,6 +94,7 @@ function init()
   hnds[3].lfo_targets = hnds[1].lfo_targets
   hnds[4].lfo_targets = hnds[1].lfo_targets
   hnds.init()
+  hs.init()
 
   c1, c2 = clk(1), clk(2)
   if norns.crow.connected() then
@@ -126,7 +128,11 @@ end
 function clk(c)
   return function ()
     local s = seq_stacks[c][1]()
+    
+    if s == -49 or s == 49 then return end
+    
     crow.output[c].volts = s / 12
+    
     engine.amp(params:get("ch"..c.."_amp"))
     engine.cutoff(params:get("ch"..c.."_cutoff"))
     engine.release(params:get("ch"..c.."_release"))
@@ -213,7 +219,8 @@ function enc(n,z)
     
     -- transpose the selected step
     if n == 3 then
-      peek(seq_stack)[idx] = peek(seq_stack)[idx] + z
+      -- we treat values -49 and 49 as a rest
+      peek(seq_stack)[idx] = util.clamp(peek(seq_stack)[idx] + z, -49, 49)
     end
   end
   
@@ -230,11 +237,10 @@ function draw()
     for i=1,seq.length do
       screen.level(seq.ix == i and 15 or 1)
       screen.move(16*(i-1), 22*c)
-      if s.is_sequins(seq[i]) then
-        screen.text(sequins_peek(seq[i])..".")
-      else
-        screen.text(seq[i])
-      end
+      local v = sequins_peek(seq[i])
+      if v == -49 or v == 49 then v = '-' end
+      if s.is_sequins(seq[i]) then v = v.."." end
+      screen.text(v)
     end
   end
   
